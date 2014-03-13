@@ -1,0 +1,15 @@
+{
+    "name": "anh/sape-php-client",
+    "description": "PHP client for sape.ru",
+    "type": "library",
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Sape",
+            "homepage": "http://sape.ru"
+        }
+    ],
+    "autoload": {
+        "classmap": [ "sape.php" ]
+    }
+}

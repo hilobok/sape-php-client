@@ -15,7 +15,7 @@
  * class SAPE_client_context    - класс для вывода контекстных сссылок
  * class SAPE_articles          - класс для вывода статей
  *
- * @version 1.2.0 от 25.02.2014
+ * @version 1.2.1 от 10.04.2014
  */
 
 /**
@@ -57,7 +57,7 @@ class SAPE_globals {
  */
 class SAPE_base {
 
-    var $_version = '1.2.0';
+    var $_version = '1.2.1';
 
     var $_verbose = false;
 
@@ -131,6 +131,13 @@ class SAPE_base {
      * @var bool
      */
     var $_use_server_array = false;
+
+    /**
+     * Показывать ли код js отдельно от выводимого контента
+     *
+     * @var bool
+     */
+    var $_show_counter_separately = false;
 
     var $_force_update_db = false;
 
@@ -239,6 +246,10 @@ class SAPE_base {
         if (isset($options['ignore_case']) && $options['ignore_case'] == true) {
             $this->_ignore_case = true;
             $this->_request_uri = strtolower($this->_request_uri);
+        }
+
+        if (isset($options['show_counter_separately'])) {
+            $this->_show_counter_separately = (bool)$options['show_counter_separately'];
         }
     }
 
@@ -567,6 +578,23 @@ class SAPE_base {
 
         return $html;
     }
+
+    /**
+     * Вернуть js-код
+     * - работает только когда параметр конструктора show_counter_separately = true
+     *
+     * @return string
+     */
+    function return_counter()
+    {
+        //если show_counter_separately = false и выполнен вызов этого метода,
+        //то заблокировать вывод js-кода вместе с контентом
+        if (false == $this->_show_counter_separately) {
+            $this->_show_counter_separately = true;
+        }
+
+        return $this->_return_obligatory_page_content();
+    }
 }
 
 /**
@@ -586,6 +614,7 @@ class SAPE_client extends SAPE_base {
 
     function SAPE_client($options = null) {
         parent::SAPE_base($options);
+
         $this->load_data();
     }
 
@@ -657,15 +686,16 @@ class SAPE_client extends SAPE_base {
      */
     function _return_html($html) {
 
-        $html = $this->_return_obligatory_page_content() . $html;
+        if (false == $this->_show_counter_separately) {
+            $html = $this->_return_obligatory_page_content() . $html;
+        }
 
-         if ($this->_debug) {
+        if ($this->_debug) {
+            $user_agent = $this->_get_full_user_agent_string();
 
-             $user_agent = $this->_get_full_user_agent_string();
-
-             $html .= $this->_debug_output($user_agent);
-             $html .= $this->_debug_output($this);
-         }
+            $html .= $this->_debug_output($user_agent);
+            $html .= $this->_debug_output($this);
+        }
 
         return $html;
     }
@@ -982,9 +1012,7 @@ class SAPE_client extends SAPE_base {
             }
         }
 
-        if ($this->_debug) {
-            $html .= print_r($this, true);
-        }
+        $html = $this->_return_html($html);
 
         return $html;
     }
@@ -1341,7 +1369,7 @@ class SAPE_context extends SAPE_base {
             $split_content = preg_split('/(?smi)(<\/?body[^>]*>)/', $buffer, -1, PREG_SPLIT_DELIM_CAPTURE);
             if (count($split_content) == 5) {
                 $buffer = $split_content[0] . $split_content[1] . $split_content[2]
-                    . $this->_return_obligatory_page_content()
+                    . (false == $this->_show_counter_separately ? $this->_return_obligatory_page_content() : '')
                     . $split_content[3] . $split_content[4];
                 unset($split_content);
 

